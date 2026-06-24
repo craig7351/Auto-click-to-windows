@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AfkKeeper — 視窗定時送鍵工具</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Microsoft JhengHei", "Segoe UI", system-ui, sans-serif;
+      background: #fff;
+      color: #1a1a1a;
+      line-height: 1.6;
+    }
+
+    a { color: #0969da; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Nav ── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(255,255,255,0.95);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid #e5e7eb;
+      padding: 0 2rem;
+      display: flex; align-items: center; gap: 2rem;
+      height: 56px;
+    }
+    .nav-brand { font-weight: 700; font-size: 1.1rem; color: #1a1a1a; }
+    .nav-links { display: flex; gap: 1.5rem; font-size: 0.9rem; }
+
+    /* ── Hero ── */
+    .hero {
+      text-align: center;
+      padding: 5rem 2rem 4rem;
+      background: linear-gradient(135deg, #f0f7ff 0%, #fff 60%);
+    }
+    .hero h1 {
+      font-size: clamp(2rem, 5vw, 3rem);
+      font-weight: 800;
+      line-height: 1.2;
+      margin-bottom: 1rem;
+    }
+    .hero .sub {
+      font-size: 1.15rem;
+      color: #555;
+      max-width: 520px;
+      margin: 0 auto 2rem;
+    }
+    .badges {
+      display: flex; justify-content: center; flex-wrap: wrap; gap: 0.5rem;
+      margin-bottom: 2rem;
+    }
+    .badge {
+      background: #f1f5f9; border: 1px solid #e2e8f0;
+      border-radius: 999px; padding: 0.25rem 0.9rem;
+      font-size: 0.8rem; color: #475569;
+    }
+    .cta-group { display: flex; justify-content: center; flex-wrap: wrap; gap: 0.75rem; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      padding: 0.65rem 1.5rem; border-radius: 8px;
+      font-size: 0.95rem; font-weight: 600; cursor: pointer;
+      transition: opacity .15s;
+    }
+    .btn:hover { opacity: .85; text-decoration: none; }
+    .btn-primary { background: #0969da; color: #fff; }
+    .btn-secondary { background: #f6f8fa; color: #1a1a1a; border: 1px solid #d0d7de; }
+
+    /* ── Sections ── */
+    section { padding: 4rem 2rem; max-width: 960px; margin: 0 auto; }
+    section + section { border-top: 1px solid #e5e7eb; }
+    h2 { font-size: 1.6rem; font-weight: 700; margin-bottom: 1.5rem; }
+
+    /* ── Feature cards ── */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 1.25rem;
+    }
+    .card {
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      background: #fafbfc;
+    }
+    .card .icon { font-size: 1.6rem; margin-bottom: 0.5rem; }
+    .card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.35rem; }
+    .card p { font-size: 0.88rem; color: #555; }
+
+    /* ── Steps ── */
+    .steps { list-style: none; counter-reset: step; display: flex; flex-direction: column; gap: 1.25rem; }
+    .steps li {
+      counter-increment: step;
+      display: flex; gap: 1.25rem; align-items: flex-start;
+    }
+    .steps li::before {
+      content: counter(step);
+      min-width: 2rem; height: 2rem;
+      background: #0969da; color: #fff;
+      border-radius: 50%; display: grid; place-items: center;
+      font-weight: 700; font-size: 0.9rem; flex-shrink: 0;
+    }
+    .steps li .step-body h3 { font-size: 1rem; font-weight: 700; }
+    .steps li .step-body p { font-size: 0.9rem; color: #555; margin-top: 0.2rem; }
+
+    /* ── Download table ── */
+    .dl-box {
+      background: #f6f8fa;
+      border: 1px solid #d0d7de;
+      border-radius: 12px;
+      padding: 2rem;
+      text-align: center;
+    }
+    .dl-box .dl-name { font-size: 1.4rem; font-weight: 800; margin-bottom: 0.5rem; }
+    .dl-box .dl-meta { font-size: 0.88rem; color: #666; margin-bottom: 1.25rem; }
+    .note {
+      margin-top: 1.5rem;
+      background: #fffbea;
+      border-left: 4px solid #f59e0b;
+      padding: 0.75rem 1rem;
+      border-radius: 0 8px 8px 0;
+      font-size: 0.88rem; color: #555;
+    }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 1px solid #e5e7eb;
+      padding: 2rem;
+      text-align: center;
+      font-size: 0.85rem;
+      color: #888;
+    }
+    footer a { color: #555; }
+    footer .links { display: flex; justify-content: center; gap: 1.5rem; margin-bottom: 0.75rem; }
+  </style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav>
+  <span class="nav-brand">⌨️ AfkKeeper</span>
+  <div class="nav-links">
+    <a href="#features">功能</a>
+    <a href="#quickstart">使用方式</a>
+    <a href="#download">下載</a>
+    <a href="https://github.com/craig7351/Auto-click-to-windows">GitHub</a>
+  </div>
+</nav>
+
+<!-- Hero -->
+<div class="hero">
+  <h1>掛機不斷線<br/>專注你的事</h1>
+  <p class="sub">定時對指定視窗送出按鍵，只在你手停下來的空檔執行——不干擾你、遊戲收得到。</p>
+  <div class="badges">
+    <span class="badge">Windows 10 / 11</span>
+    <span class="badge">C# · .NET Framework 4.x</span>
+    <span class="badge">單一 exe · 無需安裝</span>
+    <span class="badge">~16 KB</span>
+  </div>
+  <div class="cta-group">
+    <a class="btn btn-primary" href="https://github.com/craig7351/Auto-click-to-windows/releases/latest">⬇️ 下載 AfkKeeper.exe</a>
+    <a class="btn btn-secondary" href="https://github.com/craig7351/Auto-click-to-windows">📂 GitHub 原始碼</a>
+  </div>
+</div>
+
+<!-- Features -->
+<section id="features">
+  <h2>✨ 功能特色</h2>
+  <div class="cards">
+    <div class="card">
+      <div class="icon">🎯</div>
+      <h3>指定視窗送鍵</h3>
+      <p>下拉選擇任何已開啟的視窗，不影響其他程式。自動嘗試選中 Roblox。</p>
+    </div>
+    <div class="card">
+      <div class="icon">🕐</div>
+      <h3>閒置偵測</h3>
+      <p>只在你手沒在動的空檔送鍵，送完立刻把焦點還給你原本的視窗，干擾約 0.2 秒。</p>
+    </div>
+    <div class="card">
+      <div class="icon">🎮</div>
+      <h3>遊戲真的收得到</h3>
+      <p>用 <code>SendInput</code> + scan code，而非 PostMessage。Roblox 等用 DirectInput 的遊戲可以收到。</p>
+    </div>
+    <div class="card">
+      <div class="icon">🎲</div>
+      <h3>隨機抖動防偵測</h3>
+      <p>間隔支援 ± 隨機秒數，避免毫秒不差的規律被伺服器判定為機器人。</p>
+    </div>
+    <div class="card">
+      <div class="icon">🗂️</div>
+      <h3>多按鍵選擇</h3>
+      <p>空白鍵、W、上/下箭頭、E、數字 0，對應各遊戲的跳/移動/互動鍵。</p>
+    </div>
+    <div class="card">
+      <div class="icon">🔔</div>
+      <h3>縮到系統匣</h3>
+      <p>最小化後隱入系統匣繼續背景執行，雙擊圖示還原視窗。</p>
+    </div>
+    <div class="card">
+      <div class="icon">📦</div>
+      <h3>單一 exe，無需安裝</h3>
+      <p>.NET Framework 4.x 是 Windows 10/11 內建，雙擊即用，不用安裝任何環境。</p>
+    </div>
+    <div class="card">
+      <div class="icon">🔄</div>
+      <h3>重開遊戲也找得到</h3>
+      <p>依程序名重新定位視窗 handle，遊戲重啟後不需要重新設定。</p>
+    </div>
+  </div>
+</section>
+
+<!-- Quick Start -->
+<section id="quickstart">
+  <h2>🚀 使用方式</h2>
+  <ol class="steps">
+    <li>
+      <div class="step-body">
+        <h3>下載並執行 AfkKeeper.exe</h3>
+        <p>不需安裝，雙擊即可開啟。</p>
+      </div>
+    </li>
+    <li>
+      <div class="step-body">
+        <h3>開啟目標遊戲（例如 Roblox）</h3>
+        <p>從下拉選單選擇目標視窗，按「刷新」重新列舉。</p>
+      </div>
+    </li>
+    <li>
+      <div class="step-body">
+        <h3>設定間隔與按鍵</h3>
+        <p>間隔預設 780 秒（13 分），隨機抖動 ±120 秒。按鍵預設空白鍵。</p>
+      </div>
+    </li>
+    <li>
+      <div class="step-body">
+        <h3>勾選「只在我閒置時送鍵」（推薦）</h3>
+        <p>到期後等你手停 3 秒才送；若等超過 90 秒仍會強制送出，避免被踢。</p>
+      </div>
+    </li>
+    <li>
+      <div class="step-body">
+        <h3>按「▶ 開始」，最小化到系統匣</h3>
+        <p>背景繼續執行，紀錄欄會顯示每次送鍵時間。</p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<!-- Download -->
+<section id="download">
+  <h2>⬇️ 下載</h2>
+  <div class="dl-box">
+    <div class="dl-name">AfkKeeper.exe</div>
+    <div class="dl-meta">Windows 10 / 11 · 單一檔案 · 約 16 KB · 無需安裝</div>
+    <a class="btn btn-primary" href="https://github.com/craig7351/Auto-click-to-windows/releases/latest">
+      前往 GitHub Releases 下載最新版
+    </a>
+    <div class="note">
+      ⚠️ 本工具為純外部輸入模擬（不注入 DLL、不讀寫遊戲記憶體），但仍可能違反特定遊戲服務條款中關於掛機的規定。請自行評估風險，建議僅供個人使用。
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <div class="links">
+    <a href="https://github.com/craig7351/Auto-click-to-windows">GitHub</a>
+    <a href="https://github.com/craig7351/Auto-click-to-windows/releases">Releases</a>
+    <a href="https://github.com/craig7351/Auto-click-to-windows/blob/main/LICENSE">License</a>
+  </div>
+  <div>© 2026 craig7351 · MIT License</div>
+</footer>
+
+</body>
+</html>
