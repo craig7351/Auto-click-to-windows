@@ -1,4 +1,4 @@
-// AfkKeeper —— 自訂時間，對指定的已開啟視窗送出按鍵（預設空白鍵）的小工具。
+// AfkKeeper —— 自訂時間，對指定的已開啟視窗送出按鍵（預設上箭頭 Up）的小工具。
 // 設計目標：
 //   1) 真實輸入（SendInput，scan code），Roblox 等遊戲收得到。
 //   2) 干擾最小：只在「你手沒在動」的空檔，短暫把目標視窗切到前景送鍵、再立刻把焦點還給你原本的視窗。
@@ -2220,10 +2220,10 @@ namespace AfkKeeper
         // 按鍵清單：顯示名稱 -> Virtual-Key code
         private static readonly Dictionary<string, ushort> KeyMap = new Dictionary<string, ushort>
         {
+            { "上箭頭 Up", 0x26 },
             { "ESC", 0x1B },
             { "空白鍵 Space", 0x20 },
             { "W", 0x57 },
-            { "上箭頭 Up", 0x26 },
             { "下箭頭 Down", 0x28 },
             { "E", 0x45 },
             { "數字 0", 0x30 },
@@ -2277,7 +2277,8 @@ namespace AfkKeeper
             AddLabel("送出按鍵：", x, y + 4, 0);
             cboKey = new ComboBox { Left = ctrlX, Top = y, Width = 200, DropDownStyle = ComboBoxStyle.DropDownList };
             foreach (var k in KeyMap.Keys) cboKey.Items.Add(k);
-            cboKey.SelectedIndex = 0;
+            cboKey.SelectedItem = "上箭頭 Up";
+            if (cboKey.SelectedIndex < 0) cboKey.SelectedIndex = 0;
             Controls.Add(cboKey);
             y += rowH;
 
