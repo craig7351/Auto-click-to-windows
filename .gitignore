@@ -1,1 +1,6 @@
 AfkKeeper.exe
+AfkKeeper_old*.exe
+afkkeeper_config.ini
+afkkeeper_macro*.json
+afkkeeper_pause_records.csv
+pause_report.html

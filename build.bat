@@ -6,6 +6,7 @@ set CSC=C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe
 "%CSC%" /nologo /target:winexe /platform:x64 /optimize+ ^
   /out:AfkKeeper.exe ^
   /win32manifest:app.manifest ^
+  /win32icon:icon\app.ico ^
   /reference:System.dll ^
   /reference:System.Drawing.dll ^
   /reference:System.Windows.Forms.dll ^
