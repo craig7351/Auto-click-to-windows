@@ -15,6 +15,8 @@ using System.Drawing.Drawing2D;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using Thread = System.Threading.Thread;
+using ParameterizedThreadStart = System.Threading.ParameterizedThreadStart;
 using System.Windows.Forms;
 
 namespace AfkKeeper
@@ -238,10 +240,96 @@ namespace AfkKeeper
         [DllImport("user32.dll")]
         public static extern uint MapVirtualKey(uint uCode, uint uMapType);
 
+        public const uint INPUT_MOUSE = 0;
         public const uint INPUT_KEYBOARD = 1;
         public const uint KEYEVENTF_KEYUP = 0x0002;
         public const uint KEYEVENTF_SCANCODE = 0x0008;
         public const uint MAPVK_VK_TO_VSC = 0;
+
+        public const uint MOUSEEVENTF_MOVE = 0x0001;
+        public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+        public const uint MOUSEEVENTF_LEFTUP = 0x0004;
+        public const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
+        public const uint MOUSEEVENTF_RIGHTUP = 0x0010;
+        public const uint MOUSEEVENTF_MIDDLEDOWN = 0x0020;
+        public const uint MOUSEEVENTF_MIDDLEUP = 0x0040;
+        public const uint MOUSEEVENTF_WHEEL = 0x0800;
+        public const uint MOUSEEVENTF_ABSOLUTE = 0x8000;
+
+        [DllImport("user32.dll")]
+        public static extern bool SetCursorPos(int X, int Y);
+
+        [DllImport("user32.dll")]
+        public static extern bool GetCursorPos(out POINT lpPoint);
+
+        [DllImport("user32.dll")]
+        public static extern short GetAsyncKeyState(int vKey);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
+        public const int WM_HOTKEY = 0x0312;
+
+        public delegate IntPtr LowLevelProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        public static extern IntPtr SetWindowsHookEx(int idHook, LowLevelProc lpfn, IntPtr hMod, uint dwThreadId);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        public static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        public static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        public static extern IntPtr GetModuleHandle(string lpModuleName);
+
+        public const int WH_KEYBOARD_LL = 13;
+        public const int WH_MOUSE_LL = 14;
+
+        public const int WM_KEYDOWN = 0x0100;
+        public const int WM_KEYUP = 0x0101;
+        public const int WM_SYSKEYDOWN = 0x0104;
+        public const int WM_SYSKEYUP = 0x0105;
+
+        public const int WM_MOUSEMOVE = 0x0200;
+        public const int WM_LBUTTONDOWN = 0x0201;
+        public const int WM_LBUTTONUP = 0x0202;
+        public const int WM_RBUTTONDOWN = 0x0204;
+        public const int WM_RBUTTONUP = 0x0205;
+        public const int WM_MBUTTONDOWN = 0x0207;
+        public const int WM_MBUTTONUP = 0x0208;
+        public const int WM_MOUSEWHEEL = 0x020A;
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct POINT
+        {
+            public int X;
+            public int Y;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct MSLLHOOKSTRUCT
+        {
+            public POINT pt;
+            public uint mouseData;
+            public uint flags;
+            public uint time;
+            public IntPtr dwExtraInfo;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct KBDLLHOOKSTRUCT
+        {
+            public uint vkCode;
+            public uint scanCode;
+            public uint flags;
+            public uint time;
+            public IntPtr dwExtraInfo;
+        }
 
         // 用 scan code 送出一個按鍵（按下→放開）。遊戲多半讀 scan code，相容性最好。
         public static void SendKeyScan(ushort vk)
@@ -259,6 +347,41 @@ namespace AfkKeeper
             up[0].type = INPUT_KEYBOARD;
             up[0].U.ki = new KEYBDINPUT { wVk = 0, wScan = scan, dwFlags = KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP, time = 0, dwExtraInfo = IntPtr.Zero };
             SendInput(1, up, Marshal.SizeOf(typeof(INPUT)));
+        }
+
+        // 送出 scan code 按下
+        public static void SendKeyDownScan(ushort scan)
+        {
+            INPUT[] input = new INPUT[1];
+            input[0].type = INPUT_KEYBOARD;
+            input[0].U.ki = new KEYBDINPUT { wVk = 0, wScan = scan, dwFlags = KEYEVENTF_SCANCODE, time = 0, dwExtraInfo = (IntPtr)0x41464B };
+            SendInput(1, input, Marshal.SizeOf(typeof(INPUT)));
+        }
+
+        // 送出 scan code 放開
+        public static void SendKeyUpScan(ushort scan)
+        {
+            INPUT[] input = new INPUT[1];
+            input[0].type = INPUT_KEYBOARD;
+            input[0].U.ki = new KEYBDINPUT { wVk = 0, wScan = scan, dwFlags = KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP, time = 0, dwExtraInfo = (IntPtr)0x41464B };
+            SendInput(1, input, Marshal.SizeOf(typeof(INPUT)));
+        }
+
+        // 送出滑鼠輸入事件（含 0x41464B 模擬標籤）
+        public static void SendMouseInput(uint dwFlags, int dx, int dy, uint mouseData)
+        {
+            INPUT[] input = new INPUT[1];
+            input[0].type = INPUT_MOUSE;
+            input[0].U.mi = new MOUSEINPUT
+            {
+                dx = dx,
+                dy = dy,
+                mouseData = mouseData,
+                dwFlags = dwFlags,
+                time = 0,
+                dwExtraInfo = (IntPtr)0x41464B
+            };
+            SendInput(1, input, Marshal.SizeOf(typeof(INPUT)));
         }
 
         // 強制把視窗叫到前景（突破 SetForegroundWindow 的限制）。
@@ -2176,6 +2299,1075 @@ namespace AfkKeeper
         }
     }
 
+    // ====== 鍵鼠巨集資料模型與管理器 ======
+    internal enum MacroEventType
+    {
+        KeyDown,
+        KeyUp,
+        MouseMove,
+        MouseDown,
+        MouseUp,
+        MouseWheel
+    }
+
+    internal enum MouseButtonType
+    {
+        None,
+        Left,
+        Right,
+        Middle
+    }
+
+    internal class MacroEvent
+    {
+        public int DelayMs;             // 距前一個動作的毫秒
+        public MacroEventType Type;
+        public MouseButtonType Button = MouseButtonType.None;
+        public ushort VkCode;
+        public ushort ScanCode;
+        public string KeyName;
+        public int X;                   // 螢幕絕對座標 X
+        public int Y;                   // 螢幕絕對座標 Y
+        public int RelX;                // 相對視窗客戶端 X
+        public int RelY;                // 相對視窗客戶端 Y
+        public int WheelDelta;          // 滾輪滾動量
+
+        public override string ToString()
+        {
+            switch (Type)
+            {
+                case MacroEventType.KeyDown:
+                    return string.Format("鍵盤按下 [{0}] (VK: 0x{1:X2}, Scan: {2})", KeyName ?? VkCode.ToString(), VkCode, ScanCode);
+                case MacroEventType.KeyUp:
+                    return string.Format("鍵盤放開 [{0}]", KeyName ?? VkCode.ToString());
+                case MacroEventType.MouseDown:
+                    return string.Format("滑鼠按下 [{0}] 於 ({1}, {2})", Button, X, Y);
+                case MacroEventType.MouseUp:
+                    return string.Format("滑鼠放開 [{0}] 於 ({1}, {2})", Button, X, Y);
+                case MacroEventType.MouseMove:
+                    return string.Format("滑鼠移動 至 ({0}, {1})", X, Y);
+                case MacroEventType.MouseWheel:
+                    return string.Format("滑鼠滾輪滾動 ({0})", WheelDelta);
+                default:
+                    return "未知事件";
+            }
+        }
+    }
+
+    internal class MacroConfig
+    {
+        public int LoopCount = 0;              // 0 = 無限循環
+        public int LoopDelayMs = 500;          // 每次循環間隔延遲 (ms)
+        public int LoopDelayJitterMs = 50;     // 延遲抖動 (±ms)
+        public double PlaybackSpeed = 1.0;     // 播放速度倍率
+        public bool UseRelativeCoords = true;  // 使用相對視窗座標
+        public List<MacroEvent> Events = new List<MacroEvent>();
+    }
+
+    internal static class MacroStorage
+    {
+        public static void Save(string path, MacroConfig config)
+        {
+            try
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.AppendLine("{");
+                sb.AppendFormat("  \"loopCount\": {0},\r\n", config.LoopCount);
+                sb.AppendFormat("  \"loopDelayMs\": {0},\r\n", config.LoopDelayMs);
+                sb.AppendFormat("  \"loopDelayJitterMs\": {0},\r\n", config.LoopDelayJitterMs);
+                sb.AppendFormat("  \"playbackSpeed\": {0:0.00},\r\n", config.PlaybackSpeed);
+                sb.AppendFormat("  \"useRelativeCoords\": {0},\r\n", config.UseRelativeCoords ? "true" : "false");
+                sb.AppendLine("  \"events\": [");
+                if (config.Events != null)
+                {
+                    for (int i = 0; i < config.Events.Count; i++)
+                    {
+                        MacroEvent e = config.Events[i];
+                        sb.Append("    {");
+                        sb.AppendFormat("\"d\":{0},\"t\":\"{1}\"", e.DelayMs, e.Type);
+                        if (e.Button != MouseButtonType.None) sb.AppendFormat(",\"btn\":\"{0}\"", e.Button);
+                        if (!string.IsNullOrEmpty(e.KeyName)) sb.AppendFormat(",\"k\":\"{0}\"", EscapeJson(e.KeyName));
+                        if (e.VkCode != 0) sb.AppendFormat(",\"vk\":{0}", e.VkCode);
+                        if (e.ScanCode != 0) sb.AppendFormat(",\"s\":{0}", e.ScanCode);
+                        if (e.X != 0 || e.Y != 0 || e.RelX != 0 || e.RelY != 0)
+                        {
+                            sb.AppendFormat(",\"x\":{0},\"y\":{1},\"rx\":{2},\"ry\":{3}", e.X, e.Y, e.RelX, e.RelY);
+                        }
+                        if (e.WheelDelta != 0) sb.AppendFormat(",\"wd\":{0}", e.WheelDelta);
+                        sb.Append("}");
+                        if (i < config.Events.Count - 1) sb.Append(",");
+                        sb.AppendLine();
+                    }
+                }
+                sb.AppendLine("  ]");
+                sb.AppendLine("}");
+                File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
+            }
+            catch { }
+        }
+
+        public static void Load(string path, MacroConfig config)
+        {
+            if (!File.Exists(path)) return;
+            try
+            {
+                string text = File.ReadAllText(path, Encoding.UTF8);
+                string val = GetJsonVal(text, "loopCount");
+                int n;
+                if (val != null && int.TryParse(val, out n)) config.LoopCount = n;
+
+                val = GetJsonVal(text, "loopDelayMs");
+                if (val != null && int.TryParse(val, out n)) config.LoopDelayMs = n;
+
+                val = GetJsonVal(text, "loopDelayJitterMs");
+                if (val != null && int.TryParse(val, out n)) config.LoopDelayJitterMs = n;
+
+                val = GetJsonVal(text, "playbackSpeed");
+                double d;
+                if (val != null && double.TryParse(val, out d)) config.PlaybackSpeed = d;
+
+                val = GetJsonVal(text, "useRelativeCoords");
+                bool b;
+                if (val != null && bool.TryParse(val, out b)) config.UseRelativeCoords = b;
+
+                config.Events.Clear();
+                string[] lines = File.ReadAllLines(path, Encoding.UTF8);
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    string line = lines[i].Trim();
+                    if (!line.StartsWith("{") || !line.Contains("\"t\":")) continue;
+
+                    string tStr = GetJsonVal(line, "t");
+                    if (string.IsNullOrEmpty(tStr)) continue;
+
+                    MacroEvent evt = new MacroEvent();
+                    try
+                    {
+                        evt.Type = (MacroEventType)Enum.Parse(typeof(MacroEventType), tStr, true);
+                    }
+                    catch { continue; }
+
+                    string dStr = GetJsonVal(line, "d");
+                    if (dStr != null && int.TryParse(dStr, out n)) evt.DelayMs = n;
+
+                    string btnStr = GetJsonVal(line, "btn");
+                    if (!string.IsNullOrEmpty(btnStr))
+                    {
+                        try { evt.Button = (MouseButtonType)Enum.Parse(typeof(MouseButtonType), btnStr, true); } catch { }
+                    }
+
+                    evt.KeyName = GetJsonVal(line, "k");
+
+                    string vkStr = GetJsonVal(line, "vk");
+                    if (vkStr != null && int.TryParse(vkStr, out n)) evt.VkCode = (ushort)n;
+
+                    string sStr = GetJsonVal(line, "s");
+                    if (sStr != null && int.TryParse(sStr, out n)) evt.ScanCode = (ushort)n;
+
+                    string xStr = GetJsonVal(line, "x");
+                    if (xStr != null && int.TryParse(xStr, out n)) evt.X = n;
+
+                    string yStr = GetJsonVal(line, "y");
+                    if (yStr != null && int.TryParse(yStr, out n)) evt.Y = n;
+
+                    string rxStr = GetJsonVal(line, "rx");
+                    if (rxStr != null && int.TryParse(rxStr, out n)) evt.RelX = n;
+
+                    string ryStr = GetJsonVal(line, "ry");
+                    if (ryStr != null && int.TryParse(ryStr, out n)) evt.RelY = n;
+
+                    string wdStr = GetJsonVal(line, "wd");
+                    if (wdStr != null && int.TryParse(wdStr, out n)) evt.WheelDelta = n;
+
+                    config.Events.Add(evt);
+                }
+            }
+            catch { }
+        }
+
+        private static string EscapeJson(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            return s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "").Replace("\n", "");
+        }
+
+        private static string GetJsonVal(string json, string key)
+        {
+            string pattern = "\"" + key + "\"\\s*:\\s*(\"[^\"]*\"|[^,}\\s]+)";
+            var match = System.Text.RegularExpressions.Regex.Match(json, pattern);
+            if (match.Success)
+            {
+                string val = match.Groups[1].Value.Trim();
+                if (val.StartsWith("\"") && val.EndsWith("\"") && val.Length >= 2)
+                {
+                    return val.Substring(1, val.Length - 2);
+                }
+                return val;
+            }
+            return null;
+        }
+    }
+
+    internal class MacroRecorder
+    {
+        public bool IsRecording { get; private set; }
+        public event EventHandler RecordingStateChanged;
+        public event EventHandler EventRecorded;
+
+        private IntPtr hookKeyboard = IntPtr.Zero;
+        private IntPtr hookMouse = IntPtr.Zero;
+
+        // 保持委派的實體參考，防止被 GC 回收
+        private readonly Native.LowLevelProc procKeyboard;
+        private readonly Native.LowLevelProc procMouse;
+
+        private readonly Stopwatch sw = new Stopwatch();
+        private MacroConfig currentConfig = null;
+        private readonly Func<IntPtr> getTargetHwnd;
+
+        private int lastMouseX = -1;
+        private int lastMouseY = -1;
+        private bool isMouseDown = false;
+
+        public MacroRecorder(Func<IntPtr> targetProvider)
+        {
+            getTargetHwnd = targetProvider;
+            procKeyboard = KeyboardHookCallback;
+            procMouse = MouseHookCallback;
+        }
+
+        public void StartRecording(MacroConfig config)
+        {
+            if (IsRecording) return;
+            currentConfig = config;
+            currentConfig.Events.Clear();
+            lastMouseX = -1;
+            lastMouseY = -1;
+            isMouseDown = false;
+
+            IsRecording = true;
+            sw.Restart();
+
+            IntPtr hMod = Native.GetModuleHandle(Process.GetCurrentProcess().MainModule.ModuleName);
+            hookKeyboard = Native.SetWindowsHookEx(Native.WH_KEYBOARD_LL, procKeyboard, hMod, 0);
+            hookMouse = Native.SetWindowsHookEx(Native.WH_MOUSE_LL, procMouse, hMod, 0);
+
+            if (RecordingStateChanged != null) RecordingStateChanged(this, EventArgs.Empty);
+        }
+
+        public void StopRecording()
+        {
+            if (!IsRecording) return;
+            IsRecording = false;
+            sw.Stop();
+
+            if (hookKeyboard != IntPtr.Zero)
+            {
+                Native.UnhookWindowsHookEx(hookKeyboard);
+                hookKeyboard = IntPtr.Zero;
+            }
+            if (hookMouse != IntPtr.Zero)
+            {
+                Native.UnhookWindowsHookEx(hookMouse);
+                hookMouse = IntPtr.Zero;
+            }
+
+            if (RecordingStateChanged != null) RecordingStateChanged(this, EventArgs.Empty);
+        }
+
+        private IntPtr KeyboardHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+        {
+            if (nCode >= 0 && IsRecording && lParam != IntPtr.Zero)
+            {
+                Native.KBDLLHOOKSTRUCT kb = (Native.KBDLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(Native.KBDLLHOOKSTRUCT));
+
+                // 排除熱鍵 F8 (錄製)、F9 (播放)、F10 (停止)，避免將操作指令錄進腳本
+                if (kb.vkCode == (uint)Keys.F8 || kb.vkCode == (uint)Keys.F9 || kb.vkCode == (uint)Keys.F10)
+                {
+                    return Native.CallNextHookEx(hookKeyboard, nCode, wParam, lParam);
+                }
+
+                int msg = wParam.ToInt32();
+                if (msg == Native.WM_KEYDOWN || msg == Native.WM_SYSKEYDOWN)
+                {
+                    int delay = (int)sw.ElapsedMilliseconds;
+                    sw.Restart();
+                    var evt = new MacroEvent
+                    {
+                        DelayMs = delay,
+                        Type = MacroEventType.KeyDown,
+                        VkCode = (ushort)kb.vkCode,
+                        ScanCode = (ushort)kb.scanCode,
+                        KeyName = ((Keys)kb.vkCode).ToString()
+                    };
+                    currentConfig.Events.Add(evt);
+                    if (EventRecorded != null) EventRecorded(this, EventArgs.Empty);
+                }
+                else if (msg == Native.WM_KEYUP || msg == Native.WM_SYSKEYUP)
+                {
+                    int delay = (int)sw.ElapsedMilliseconds;
+                    sw.Restart();
+                    var evt = new MacroEvent
+                    {
+                        DelayMs = delay,
+                        Type = MacroEventType.KeyUp,
+                        VkCode = (ushort)kb.vkCode,
+                        ScanCode = (ushort)kb.scanCode,
+                        KeyName = ((Keys)kb.vkCode).ToString()
+                    };
+                    currentConfig.Events.Add(evt);
+                    if (EventRecorded != null) EventRecorded(this, EventArgs.Empty);
+                }
+            }
+            return Native.CallNextHookEx(hookKeyboard, nCode, wParam, lParam);
+        }
+
+        private IntPtr MouseHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+        {
+            if (nCode >= 0 && IsRecording && lParam != IntPtr.Zero)
+            {
+                Native.MSLLHOOKSTRUCT ms = (Native.MSLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(Native.MSLLHOOKSTRUCT));
+
+                // 標記為內部模擬事件者跳過
+                if (ms.dwExtraInfo == (IntPtr)0x41464B)
+                {
+                    return Native.CallNextHookEx(hookMouse, nCode, wParam, lParam);
+                }
+
+                int msg = wParam.ToInt32();
+                int x = ms.pt.X;
+                int y = ms.pt.Y;
+
+                // 計算相對座標
+                int relX = x;
+                int relY = y;
+                try
+                {
+                    IntPtr target = getTargetHwnd != null ? getTargetHwnd() : IntPtr.Zero;
+                    if (target != IntPtr.Zero && Native.IsWindow(target))
+                    {
+                        Native.RECT rect;
+                        if (Native.GetWindowBounds(target, out rect))
+                        {
+                            relX = x - rect.Left;
+                            relY = y - rect.Top;
+                        }
+                    }
+                }
+                catch { }
+
+                if (msg == Native.WM_MOUSEMOVE)
+                {
+                    int dx = lastMouseX == -1 ? 0 : x - lastMouseX;
+                    int dy = lastMouseY == -1 ? 0 : y - lastMouseY;
+                    int distSq = dx * dx + dy * dy;
+                    long elapsed = sw.ElapsedMilliseconds;
+
+                    // 平滑軌跡過濾：若按住拖曳 >= 3px 或 >= 25ms；若自由移動 >= 5px (25) 且 >= 20ms
+                    bool record = false;
+                    if (lastMouseX == -1) record = true;
+                    else if (isMouseDown && (distSq >= 9 || elapsed >= 25)) record = true;
+                    else if (!isMouseDown && (distSq >= 25 && elapsed >= 20)) record = true;
+
+                    if (record)
+                    {
+                        int delay = (int)sw.ElapsedMilliseconds;
+                        sw.Restart();
+                        lastMouseX = x;
+                        lastMouseY = y;
+                        var evt = new MacroEvent
+                        {
+                            DelayMs = delay,
+                            Type = MacroEventType.MouseMove,
+                            X = x,
+                            Y = y,
+                            RelX = relX,
+                            RelY = relY
+                        };
+                        currentConfig.Events.Add(evt);
+                        if (EventRecorded != null) EventRecorded(this, EventArgs.Empty);
+                    }
+                }
+                else if (msg == Native.WM_LBUTTONDOWN || msg == Native.WM_RBUTTONDOWN || msg == Native.WM_MBUTTONDOWN)
+                {
+                    isMouseDown = true;
+                    // 若游標尚未落在點擊點，先補送一次定位移動
+                    if (lastMouseX != x || lastMouseY != y)
+                    {
+                        int mDelay = (int)sw.ElapsedMilliseconds;
+                        sw.Restart();
+                        lastMouseX = x;
+                        lastMouseY = y;
+                        currentConfig.Events.Add(new MacroEvent
+                        {
+                            DelayMs = mDelay,
+                            Type = MacroEventType.MouseMove,
+                            X = x,
+                            Y = y,
+                            RelX = relX,
+                            RelY = relY
+                        });
+                    }
+
+                    int delay = (int)sw.ElapsedMilliseconds;
+                    sw.Restart();
+                    MouseButtonType btn = (msg == Native.WM_LBUTTONDOWN) ? MouseButtonType.Left :
+                                         ((msg == Native.WM_RBUTTONDOWN) ? MouseButtonType.Right : MouseButtonType.Middle);
+                    var evt = new MacroEvent
+                    {
+                        DelayMs = delay,
+                        Type = MacroEventType.MouseDown,
+                        Button = btn,
+                        X = x,
+                        Y = y,
+                        RelX = relX,
+                        RelY = relY
+                    };
+                    currentConfig.Events.Add(evt);
+                    if (EventRecorded != null) EventRecorded(this, EventArgs.Empty);
+                }
+                else if (msg == Native.WM_LBUTTONUP || msg == Native.WM_RBUTTONUP || msg == Native.WM_MBUTTONUP)
+                {
+                    isMouseDown = false;
+                    int delay = (int)sw.ElapsedMilliseconds;
+                    sw.Restart();
+                    MouseButtonType btn = (msg == Native.WM_LBUTTONUP) ? MouseButtonType.Left :
+                                         ((msg == Native.WM_RBUTTONUP) ? MouseButtonType.Right : MouseButtonType.Middle);
+                    var evt = new MacroEvent
+                    {
+                        DelayMs = delay,
+                        Type = MacroEventType.MouseUp,
+                        Button = btn,
+                        X = x,
+                        Y = y,
+                        RelX = relX,
+                        RelY = relY
+                    };
+                    currentConfig.Events.Add(evt);
+                    if (EventRecorded != null) EventRecorded(this, EventArgs.Empty);
+                }
+                else if (msg == Native.WM_MOUSEWHEEL)
+                {
+                    int delay = (int)sw.ElapsedMilliseconds;
+                    sw.Restart();
+                    short delta = (short)((ms.mouseData >> 16) & 0xFFFF);
+                    var evt = new MacroEvent
+                    {
+                        DelayMs = delay,
+                        Type = MacroEventType.MouseWheel,
+                        WheelDelta = delta,
+                        X = x,
+                        Y = y,
+                        RelX = relX,
+                        RelY = relY
+                    };
+                    currentConfig.Events.Add(evt);
+                    if (EventRecorded != null) EventRecorded(this, EventArgs.Empty);
+                }
+            }
+            return Native.CallNextHookEx(hookMouse, nCode, wParam, lParam);
+        }
+    }
+
+    internal class MacroPlayer
+    {
+        public bool IsPlaying { get; private set; }
+        public int CurrentLoop { get; private set; }
+        public event EventHandler PlaybackStateChanged;
+
+        private Thread workerThread = null;
+        private volatile bool stopRequested = false;
+        private readonly Func<IntPtr> getTargetHwnd;
+        private readonly Random rng = new Random();
+
+        public MacroPlayer(Func<IntPtr> targetProvider)
+        {
+            getTargetHwnd = targetProvider;
+        }
+
+        public void Start(MacroConfig config)
+        {
+            if (IsPlaying) return;
+            if (config.Events == null || config.Events.Count == 0) return;
+
+            stopRequested = false;
+            CurrentLoop = 0;
+            IsPlaying = true;
+
+            List<MacroEvent> copyEvents = new List<MacroEvent>(config.Events);
+
+            workerThread = new Thread(new ParameterizedThreadStart(Worker));
+            workerThread.IsBackground = true;
+            workerThread.Start(new object[] { config, copyEvents });
+
+            if (PlaybackStateChanged != null) PlaybackStateChanged(this, EventArgs.Empty);
+        }
+
+        public void Stop()
+        {
+            if (!IsPlaying) return;
+            stopRequested = true;
+            IsPlaying = false;
+
+            try
+            {
+                Native.SendMouseInput(Native.MOUSEEVENTF_LEFTUP | Native.MOUSEEVENTF_RIGHTUP | Native.MOUSEEVENTF_MIDDLEUP, 0, 0, 0);
+            }
+            catch { }
+
+            if (PlaybackStateChanged != null) PlaybackStateChanged(this, EventArgs.Empty);
+        }
+
+        private void Worker(object param)
+        {
+            object[] arr = (object[])param;
+            MacroConfig config = (MacroConfig)arr[0];
+            List<MacroEvent> events = (List<MacroEvent>)arr[1];
+
+            bool infinite = (config.LoopCount <= 0);
+            int maxLoops = config.LoopCount;
+            double speed = config.PlaybackSpeed <= 0 ? 1.0 : config.PlaybackSpeed;
+
+            try
+            {
+                IntPtr target = getTargetHwnd != null ? getTargetHwnd() : IntPtr.Zero;
+                if (target != IntPtr.Zero && Native.IsWindow(target))
+                {
+                    Native.ForceForeground(target);
+                    Thread.Sleep(100);
+                }
+
+                while (!stopRequested && (infinite || CurrentLoop < maxLoops))
+                {
+                    CurrentLoop++;
+                    if (PlaybackStateChanged != null) PlaybackStateChanged(this, EventArgs.Empty);
+
+                    for (int i = 0; i < events.Count; i++)
+                    {
+                        if (stopRequested) break;
+
+                        if (Native.GetAsyncKeyState(0x1B) < 0) // ESC 緊急停止
+                        {
+                            stopRequested = true;
+                            break;
+                        }
+
+                        MacroEvent e = events[i];
+                        int sleepMs = (int)(e.DelayMs / speed);
+                        if (sleepMs > 0)
+                        {
+                            int rem = sleepMs;
+                            while (rem > 0 && !stopRequested)
+                            {
+                                if (Native.GetAsyncKeyState(0x1B) < 0) { stopRequested = true; break; }
+                                int slice = rem > 15 ? 15 : rem;
+                                Thread.Sleep(slice);
+                                rem -= slice;
+                            }
+                            if (stopRequested) break;
+                        }
+
+                        int playX = e.X;
+                        int playY = e.Y;
+                        if (config.UseRelativeCoords)
+                        {
+                            IntPtr tHwnd = getTargetHwnd != null ? getTargetHwnd() : IntPtr.Zero;
+                            if (tHwnd != IntPtr.Zero && Native.IsWindow(tHwnd))
+                            {
+                                Native.RECT rect;
+                                if (Native.GetWindowBounds(tHwnd, out rect))
+                                {
+                                    playX = rect.Left + e.RelX;
+                                    playY = rect.Top + e.RelY;
+                                }
+                            }
+                        }
+
+                        switch (e.Type)
+                        {
+                            case MacroEventType.MouseMove:
+                                Native.SetCursorPos(playX, playY);
+                                break;
+
+                            case MacroEventType.MouseDown:
+                                Native.SetCursorPos(playX, playY);
+                                Thread.Sleep(5);
+                                if (e.Button == MouseButtonType.Left)
+                                    Native.SendMouseInput(Native.MOUSEEVENTF_LEFTDOWN, 0, 0, 0);
+                                else if (e.Button == MouseButtonType.Right)
+                                    Native.SendMouseInput(Native.MOUSEEVENTF_RIGHTDOWN, 0, 0, 0);
+                                else if (e.Button == MouseButtonType.Middle)
+                                    Native.SendMouseInput(Native.MOUSEEVENTF_MIDDLEDOWN, 0, 0, 0);
+                                break;
+
+                            case MacroEventType.MouseUp:
+                                Native.SetCursorPos(playX, playY);
+                                Thread.Sleep(5);
+                                if (e.Button == MouseButtonType.Left)
+                                    Native.SendMouseInput(Native.MOUSEEVENTF_LEFTUP, 0, 0, 0);
+                                else if (e.Button == MouseButtonType.Right)
+                                    Native.SendMouseInput(Native.MOUSEEVENTF_RIGHTUP, 0, 0, 0);
+                                else if (e.Button == MouseButtonType.Middle)
+                                    Native.SendMouseInput(Native.MOUSEEVENTF_MIDDLEUP, 0, 0, 0);
+                                break;
+
+                            case MacroEventType.KeyDown:
+                                ushort downScan = e.ScanCode > 0 ? e.ScanCode : (ushort)Native.MapVirtualKey(e.VkCode, Native.MAPVK_VK_TO_VSC);
+                                if (downScan > 0)
+                                {
+                                    Native.SendKeyDownScan(downScan);
+                                }
+                                else
+                                {
+                                    Native.INPUT[] inp = new Native.INPUT[1];
+                                    inp[0].type = Native.INPUT_KEYBOARD;
+                                    inp[0].U.ki = new Native.KEYBDINPUT { wVk = e.VkCode, wScan = 0, dwFlags = 0, time = 0, dwExtraInfo = (IntPtr)0x41464B };
+                                    Native.SendInput(1, inp, Marshal.SizeOf(typeof(Native.INPUT)));
+                                }
+                                break;
+
+                            case MacroEventType.KeyUp:
+                                ushort upScan = e.ScanCode > 0 ? e.ScanCode : (ushort)Native.MapVirtualKey(e.VkCode, Native.MAPVK_VK_TO_VSC);
+                                if (upScan > 0)
+                                {
+                                    Native.SendKeyUpScan(upScan);
+                                }
+                                else
+                                {
+                                    Native.INPUT[] inp = new Native.INPUT[1];
+                                    inp[0].type = Native.INPUT_KEYBOARD;
+                                    inp[0].U.ki = new Native.KEYBDINPUT { wVk = e.VkCode, wScan = 0, dwFlags = Native.KEYEVENTF_KEYUP, time = 0, dwExtraInfo = (IntPtr)0x41464B };
+                                    Native.SendInput(1, inp, Marshal.SizeOf(typeof(Native.INPUT)));
+                                }
+                                break;
+
+                            case MacroEventType.MouseWheel:
+                                Native.SendMouseInput(Native.MOUSEEVENTF_WHEEL, 0, 0, (uint)e.WheelDelta);
+                                break;
+                        }
+                    }
+
+                    if (stopRequested || (!infinite && CurrentLoop >= maxLoops)) break;
+
+                    int loopDelay = config.LoopDelayMs;
+                    if (config.LoopDelayJitterMs > 0)
+                    {
+                        loopDelay += rng.Next(-config.LoopDelayJitterMs, config.LoopDelayJitterMs + 1);
+                        if (loopDelay < 0) loopDelay = 0;
+                    }
+
+                    if (loopDelay > 0)
+                    {
+                        int rem = loopDelay;
+                        while (rem > 0 && !stopRequested)
+                        {
+                            if (Native.GetAsyncKeyState(0x1B) < 0) { stopRequested = true; break; }
+                            int slice = rem > 20 ? 20 : rem;
+                            Thread.Sleep(slice);
+                            rem -= slice;
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                IsPlaying = false;
+                try
+                {
+                    Native.SendMouseInput(Native.MOUSEEVENTF_LEFTUP | Native.MOUSEEVENTF_RIGHTUP | Native.MOUSEEVENTF_MIDDLEUP, 0, 0, 0);
+                }
+                catch { }
+
+                if (PlaybackStateChanged != null) PlaybackStateChanged(this, EventArgs.Empty);
+            }
+        }
+    }
+
+    // 支援雙緩衝無閃爍的 ListView
+    internal class DoubleBufferedListView : ListView
+    {
+        public DoubleBufferedListView()
+        {
+            SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint, true);
+            UpdateStyles();
+        }
+    }
+
+    // ====== 巨集管理視窗 ======
+    internal class MacroManagerForm : Form
+    {
+        private readonly MacroConfig config;
+        private readonly MacroRecorder recorder;
+        private readonly MacroPlayer player;
+        private readonly Func<IntPtr> getTargetHwnd;
+        private readonly Action onConfigChanged;
+
+        private DoubleBufferedListView lvEvents;
+        private CheckBox chkInfinite;
+        private NumericUpDown numLoopCount;
+        private NumericUpDown numLoopDelay;
+        private NumericUpDown numLoopJitter;
+        private ComboBox cboSpeed;
+        private CheckBox chkRelative;
+        private Label lblSummary;
+        private Button btnRecord;
+        private Button btnPlay;
+        private Button btnStop;
+
+        public MacroManagerForm(MacroConfig cfg, MacroRecorder rec, MacroPlayer ply, Func<IntPtr> targetProvider, Action notifyChanged)
+        {
+            config = cfg;
+            recorder = rec;
+            player = ply;
+            getTargetHwnd = targetProvider;
+            onConfigChanged = notifyChanged;
+
+            BuildUi();
+            RefreshView();
+
+            recorder.RecordingStateChanged += (s, e) => { if (!IsDisposed) BeginInvoke(new Action(RefreshButtons)); };
+            recorder.EventRecorded += (s, e) => { if (!IsDisposed) BeginInvoke(new Action(RefreshView)); };
+            player.PlaybackStateChanged += (s, e) => { if (!IsDisposed) BeginInvoke(new Action(RefreshButtons)); };
+        }
+
+        private void BuildUi()
+        {
+            Text = "AfkKeeper — 鍵鼠巨集腳本管理（F8 錄製 / F9 循環播放 / ESC 停止）";
+            StartPosition = FormStartPosition.CenterScreen;
+            ClientSize = new Size(720, 560);
+            Font = new Font("Microsoft JhengHei UI", 9.5F);
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
+
+            // 頂部設定面板
+            var pnlTop = new Panel { Dock = DockStyle.Top, Height = 110, Padding = new Padding(12) };
+            Controls.Add(pnlTop);
+
+            chkInfinite = new CheckBox
+            {
+                Text = "無限循環播放（按 F9 或 ESC 隨時停止）",
+                Left = 14, Top = 12, AutoSize = true,
+                Checked = (config.LoopCount <= 0),
+                Font = new Font("Microsoft JhengHei UI", 9.5F, FontStyle.Bold)
+            };
+            chkInfinite.CheckedChanged += (s, e) =>
+            {
+                numLoopCount.Enabled = !chkInfinite.Checked;
+                config.LoopCount = chkInfinite.Checked ? 0 : (int)numLoopCount.Value;
+                if (onConfigChanged != null) onConfigChanged();
+            };
+            pnlTop.Controls.Add(chkInfinite);
+
+            var lblCount = new Label { Text = "指定次數：", Left = 380, Top = 14, AutoSize = true };
+            pnlTop.Controls.Add(lblCount);
+
+            numLoopCount = new NumericUpDown
+            {
+                Left = 450, Top = 10, Width = 80,
+                Minimum = 1, Maximum = 99999,
+                Value = (config.LoopCount > 0 ? config.LoopCount : 10),
+                Enabled = !chkInfinite.Checked
+            };
+            numLoopCount.ValueChanged += (s, e) =>
+            {
+                if (!chkInfinite.Checked)
+                {
+                    config.LoopCount = (int)numLoopCount.Value;
+                    if (onConfigChanged != null) onConfigChanged();
+                }
+            };
+            pnlTop.Controls.Add(numLoopCount);
+
+            var lblDelay = new Label { Text = "每次間隔 (ms)：", Left = 14, Top = 46, AutoSize = true };
+            pnlTop.Controls.Add(lblDelay);
+
+            numLoopDelay = new NumericUpDown
+            {
+                Left = 120, Top = 42, Width = 90,
+                Minimum = 0, Maximum = 600000,
+                Value = config.LoopDelayMs
+            };
+            numLoopDelay.ValueChanged += (s, e) =>
+            {
+                config.LoopDelayMs = (int)numLoopDelay.Value;
+                if (onConfigChanged != null) onConfigChanged();
+            };
+            pnlTop.Controls.Add(numLoopDelay);
+
+            var lblJitter = new Label { Text = "± 隨機抖動 (ms)：", Left = 224, Top = 46, AutoSize = true };
+            pnlTop.Controls.Add(lblJitter);
+
+            numLoopJitter = new NumericUpDown
+            {
+                Left = 346, Top = 42, Width = 80,
+                Minimum = 0, Maximum = 60000,
+                Value = config.LoopDelayJitterMs
+            };
+            numLoopJitter.ValueChanged += (s, e) =>
+            {
+                config.LoopDelayJitterMs = (int)numLoopJitter.Value;
+                if (onConfigChanged != null) onConfigChanged();
+            };
+            pnlTop.Controls.Add(numLoopJitter);
+
+            var lblSpd = new Label { Text = "播放速度：", Left = 450, Top = 46, AutoSize = true };
+            pnlTop.Controls.Add(lblSpd);
+
+            cboSpeed = new ComboBox { Left = 525, Top = 42, Width = 110, DropDownStyle = ComboBoxStyle.DropDownList };
+            cboSpeed.Items.AddRange(new object[] { "0.5x", "1.0x (原速)", "1.25x", "1.5x", "2.0x", "3.0x" });
+            cboSpeed.SelectedIndex = 1;
+            cboSpeed.SelectedIndexChanged += (s, e) =>
+            {
+                string txt = cboSpeed.SelectedItem.ToString();
+                if (txt.StartsWith("0.5")) config.PlaybackSpeed = 0.5;
+                else if (txt.StartsWith("1.0")) config.PlaybackSpeed = 1.0;
+                else if (txt.StartsWith("1.25")) config.PlaybackSpeed = 1.25;
+                else if (txt.StartsWith("1.5")) config.PlaybackSpeed = 1.5;
+                else if (txt.StartsWith("2.0")) config.PlaybackSpeed = 2.0;
+                else if (txt.StartsWith("3.0")) config.PlaybackSpeed = 3.0;
+                if (onConfigChanged != null) onConfigChanged();
+            };
+            pnlTop.Controls.Add(cboSpeed);
+
+            chkRelative = new CheckBox
+            {
+                Text = "使用目標視窗相對座標（即使目標遊戲視窗拖曳位移，點擊也能精確對齊）",
+                Left = 14, Top = 78, AutoSize = true,
+                Checked = config.UseRelativeCoords,
+                ForeColor = Color.DarkSlateGray
+            };
+            chkRelative.CheckedChanged += (s, e) =>
+            {
+                config.UseRelativeCoords = chkRelative.Checked;
+                if (onConfigChanged != null) onConfigChanged();
+            };
+            pnlTop.Controls.Add(chkRelative);
+
+            // 底部控制面板
+            var pnlBottom = new Panel { Dock = DockStyle.Bottom, Height = 95, Padding = new Padding(12) };
+            Controls.Add(pnlBottom);
+
+            lblSummary = new Label
+            {
+                Text = "動作統計：共 0 個動作，總長度 0.0 秒",
+                Left = 14, Top = 10, AutoSize = true,
+                Font = new Font("Microsoft JhengHei UI", 9.5F, FontStyle.Bold),
+                ForeColor = Color.DarkSlateBlue
+            };
+            pnlBottom.Controls.Add(lblSummary);
+
+            btnRecord = new Button
+            {
+                Text = "⏺ 錄製 (F8)",
+                Left = 14, Top = 40, Width = 110, Height = 36,
+                Font = new Font("Microsoft JhengHei UI", 9.5F, FontStyle.Bold),
+                BackColor = Color.FromArgb(220, 53, 69),
+                ForeColor = Color.White
+            };
+            btnRecord.Click += (s, e) =>
+            {
+                if (recorder.IsRecording) recorder.StopRecording();
+                else recorder.StartRecording(config);
+                RefreshButtons();
+            };
+            pnlBottom.Controls.Add(btnRecord);
+
+            btnPlay = new Button
+            {
+                Text = "▶ 循環播放 (F9)",
+                Left = 132, Top = 40, Width = 130, Height = 36,
+                Font = new Font("Microsoft JhengHei UI", 9.5F, FontStyle.Bold),
+                BackColor = Color.FromArgb(25, 135, 84),
+                ForeColor = Color.White
+            };
+            btnPlay.Click += (s, e) =>
+            {
+                if (player.IsPlaying) player.Stop();
+                else player.Start(config);
+                RefreshButtons();
+            };
+            pnlBottom.Controls.Add(btnPlay);
+
+            btnStop = new Button
+            {
+                Text = "⏹ 停止 (ESC)",
+                Left = 270, Top = 40, Width = 110, Height = 36,
+                BackColor = Color.FromArgb(108, 117, 125),
+                ForeColor = Color.White
+            };
+            btnStop.Click += (s, e) =>
+            {
+                recorder.StopRecording();
+                player.Stop();
+                RefreshButtons();
+            };
+            pnlBottom.Controls.Add(btnStop);
+
+            var btnClear = new Button
+            {
+                Text = "🗑 清空",
+                Left = 390, Top = 40, Width = 80, Height = 36
+            };
+            btnClear.Click += (s, e) =>
+            {
+                if (MessageBox.Show("確定要清空目前已錄製的所有動作嗎？", "確認清空", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+                {
+                    config.Events.Clear();
+                    RefreshView();
+                    if (onConfigChanged != null) onConfigChanged();
+                }
+            };
+            pnlBottom.Controls.Add(btnClear);
+
+            var btnExport = new Button
+            {
+                Text = "💾 匯出腳本...",
+                Left = 478, Top = 40, Width = 110, Height = 36
+            };
+            btnExport.Click += (s, e) =>
+            {
+                using (SaveFileDialog sfd = new SaveFileDialog { Filter = "巨集腳本 (*.json)|*.json", FileName = "macro_script.json" })
+                {
+                    if (sfd.ShowDialog() == DialogResult.OK)
+                    {
+                        MacroStorage.Save(sfd.FileName, config);
+                        MessageBox.Show("巨集腳本已成功匯出！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                }
+            };
+            pnlBottom.Controls.Add(btnExport);
+
+            var btnImport = new Button
+            {
+                Text = "📂 匯入...",
+                Left = 596, Top = 40, Width = 95, Height = 36
+            };
+            btnImport.Click += (s, e) =>
+            {
+                using (OpenFileDialog ofd = new OpenFileDialog { Filter = "巨集腳本 (*.json)|*.json" })
+                {
+                    if (ofd.ShowDialog() == DialogResult.OK)
+                    {
+                        MacroStorage.Load(ofd.FileName, config);
+                        RefreshView();
+                        if (onConfigChanged != null) onConfigChanged();
+                        MessageBox.Show("巨集腳本已成功匯入！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                }
+            };
+            pnlBottom.Controls.Add(btnImport);
+
+            // 中間動作清單
+            lvEvents = new DoubleBufferedListView
+            {
+                Dock = DockStyle.Fill,
+                View = View.Details,
+                FullRowSelect = true,
+                GridLines = true,
+                Font = new Font("Microsoft JhengHei UI", 9F)
+            };
+            lvEvents.Columns.Add("#", 45);
+            lvEvents.Columns.Add("延遲 (ms)", 80);
+            lvEvents.Columns.Add("動作類型", 100);
+            lvEvents.Columns.Add("動作詳細內容", 320);
+            lvEvents.Columns.Add("相對視窗座標", 130);
+
+            Controls.Add(lvEvents);
+            lvEvents.BringToFront();
+        }
+
+        public void RefreshView()
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(RefreshView));
+                return;
+            }
+
+            lvEvents.BeginUpdate();
+            lvEvents.Items.Clear();
+
+            int totalMs = 0;
+            if (config.Events != null)
+            {
+                for (int i = 0; i < config.Events.Count; i++)
+                {
+                    MacroEvent e = config.Events[i];
+                    totalMs += e.DelayMs;
+
+                    var item = new ListViewItem((i + 1).ToString());
+                    item.SubItems.Add(e.DelayMs.ToString());
+                    item.SubItems.Add(e.Type.ToString());
+                    item.SubItems.Add(e.ToString());
+                    string relCoord = (e.X != 0 || e.Y != 0) ? string.Format("({0}, {1})", e.RelX, e.RelY) : "-";
+                    item.SubItems.Add(relCoord);
+
+                    if (e.Type == MacroEventType.KeyDown || e.Type == MacroEventType.KeyUp)
+                    {
+                        item.ForeColor = Color.DarkBlue;
+                    }
+                    else if (e.Type == MacroEventType.MouseDown || e.Type == MacroEventType.MouseUp)
+                    {
+                        item.ForeColor = Color.DarkRed;
+                    }
+                    else if (e.Type == MacroEventType.MouseMove)
+                    {
+                        item.ForeColor = Color.DimGray;
+                    }
+
+                    lvEvents.Items.Add(item);
+                }
+            }
+            lvEvents.EndUpdate();
+
+            if (lvEvents.Items.Count > 0)
+            {
+                lvEvents.EnsureVisible(lvEvents.Items.Count - 1);
+            }
+
+            double totalSec = totalMs / 1000.0;
+            int count = config.Events != null ? config.Events.Count : 0;
+            lblSummary.Text = string.Format("動作統計：共 {0} 個動作，總長度 {1:0.0} 秒", count, totalSec);
+
+            RefreshButtons();
+        }
+
+        public void RefreshButtons()
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(RefreshButtons));
+                return;
+            }
+
+            if (recorder.IsRecording)
+            {
+                btnRecord.Text = "⏹ 停止 (F8)";
+                btnRecord.BackColor = Color.FromArgb(180, 20, 30);
+                btnPlay.Enabled = false;
+            }
+            else
+            {
+                btnRecord.Text = "⏺ 錄製 (F8)";
+                btnRecord.BackColor = Color.FromArgb(220, 53, 69);
+                btnPlay.Enabled = (config.Events != null && config.Events.Count > 0);
+            }
+
+            if (player.IsPlaying)
+            {
+                btnPlay.Text = "⏹ 停止 (F9)";
+                btnPlay.BackColor = Color.FromArgb(220, 100, 0);
+                btnRecord.Enabled = false;
+            }
+            else
+            {
+                btnPlay.Text = "▶ 循環播放 (F9)";
+                btnPlay.BackColor = Color.FromArgb(25, 135, 84);
+                btnRecord.Enabled = true;
+            }
+        }
+    }
+
     // ====== 主視窗 ======
     internal class MainForm : Form
     {
@@ -2197,6 +3389,22 @@ namespace AfkKeeper
         private Label lblStatus;
         private TextBox txtLog;
         private NotifyIcon tray;
+
+        // 鍵鼠巨集
+        private readonly MacroConfig macroConfig = new MacroConfig();
+        private MacroRecorder macroRecorder = null;
+        private MacroPlayer macroPlayer = null;
+        private string macroPath;
+        private MacroManagerForm macroForm = null;
+
+        // 巨集 UI 控制項
+        private GroupBox grpMacro;
+        private Button btnMacroRecord;
+        private Button btnMacroPlay;
+        private Button btnMacroStop;
+        private Button btnMacroManage;
+        private Label lblMacroStatus;
+        private Label lblMacroLoopSummary;
 
         // 邏輯
         private readonly Timer tick = new Timer();   // 每秒跑一次的主迴圈
@@ -2232,9 +3440,20 @@ namespace AfkKeeper
         public MainForm()
         {
             configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "afkkeeper_config.ini");
+            macroPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "afkkeeper_macro.json");
+
+            macroRecorder = new MacroRecorder(() => ResolveTarget(cboWindows != null ? cboWindows.SelectedItem as WindowItem : null));
+            macroPlayer = new MacroPlayer(() => ResolveTarget(cboWindows != null ? cboWindows.SelectedItem as WindowItem : null));
+
+            macroRecorder.RecordingStateChanged += (s, e) => { if (!IsDisposed) BeginInvoke(new Action(UpdateMacroUiStatus)); };
+            macroRecorder.EventRecorded += (s, e) => { if (!IsDisposed) BeginInvoke(new Action(UpdateMacroUiStatus)); };
+            macroPlayer.PlaybackStateChanged += (s, e) => { if (!IsDisposed) BeginInvoke(new Action(UpdateMacroUiStatus)); };
+
             BuildUi();
             RefreshWindowList();
             LoadConfig();
+            LoadMacro();
+            UpdateMacroUiStatus();
 
             tracker.TransitionState(TrackerState.ManualStopped, GetSelectedTargetName(), "軟體就緒待命中");
 
@@ -2255,7 +3474,7 @@ namespace AfkKeeper
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(740, 680);
+            ClientSize = new Size(740, 700);
             Font = new Font("Microsoft JhengHei UI", 10F);
             AutoScaleMode = AutoScaleMode.Font;
 
@@ -2373,11 +3592,91 @@ namespace AfkKeeper
 
             txtLog = new TextBox
             {
-                Left = x, Top = y, Width = 672, Height = 145,
+                Left = x, Top = y, Width = 672, Height = 125,
                 Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical,
                 BackColor = Color.White
             };
             Controls.Add(txtLog);
+            y += 135;
+
+            // 獨立循環巨集控制群組
+            grpMacro = new GroupBox
+            {
+                Text = "⏺ 獨立循環巨集（熱鍵：F8 錄製/停止，F9 循環播放/停止，ESC 緊急停止）",
+                Left = x,
+                Top = y,
+                Width = 672,
+                Height = 112,
+                Font = new Font("Microsoft JhengHei UI", 9.5F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(33, 37, 41)
+            };
+            Controls.Add(grpMacro);
+
+            btnMacroRecord = new Button
+            {
+                Left = 14, Top = 24, Width = 135, Height = 36,
+                Text = "⏺ 錄製 (F8)",
+                Font = new Font("Microsoft JhengHei UI", 10F, FontStyle.Bold),
+                BackColor = Color.FromArgb(220, 53, 69),
+                ForeColor = Color.White,
+                Cursor = Cursors.Hand
+            };
+            btnMacroRecord.Click += (s, e) => ToggleMacroRecord();
+            grpMacro.Controls.Add(btnMacroRecord);
+
+            btnMacroPlay = new Button
+            {
+                Left = 158, Top = 24, Width = 145, Height = 36,
+                Text = "▶ 循環播放 (F9)",
+                Font = new Font("Microsoft JhengHei UI", 10F, FontStyle.Bold),
+                BackColor = Color.FromArgb(25, 135, 84),
+                ForeColor = Color.White,
+                Cursor = Cursors.Hand
+            };
+            btnMacroPlay.Click += (s, e) => ToggleMacroPlay();
+            grpMacro.Controls.Add(btnMacroPlay);
+
+            btnMacroStop = new Button
+            {
+                Left = 312, Top = 24, Width = 130, Height = 36,
+                Text = "⏹ 停止 (ESC)",
+                Font = new Font("Microsoft JhengHei UI", 10F, FontStyle.Bold),
+                BackColor = Color.FromArgb(108, 117, 125),
+                ForeColor = Color.White,
+                Cursor = Cursors.Hand
+            };
+            btnMacroStop.Click += (s, e) => StopMacro();
+            grpMacro.Controls.Add(btnMacroStop);
+
+            btnMacroManage = new Button
+            {
+                Left = 452, Top = 24, Width = 205, Height = 36,
+                Text = "📋 巨集腳本管理...",
+                Font = new Font("Microsoft JhengHei UI", 10F, FontStyle.Bold),
+                BackColor = Color.FromArgb(13, 110, 253),
+                ForeColor = Color.White,
+                Cursor = Cursors.Hand
+            };
+            btnMacroManage.Click += (s, e) => OpenMacroManager();
+            grpMacro.Controls.Add(btnMacroManage);
+
+            lblMacroStatus = new Label
+            {
+                Left = 14, Top = 72, AutoSize = true,
+                Text = "巨集狀態：閒置中（已載入 0 個動作）",
+                Font = new Font("Microsoft JhengHei UI", 9.5F, FontStyle.Bold),
+                ForeColor = Color.DarkSlateBlue
+            };
+            grpMacro.Controls.Add(lblMacroStatus);
+
+            lblMacroLoopSummary = new Label
+            {
+                Left = 330, Top = 73, AutoSize = true,
+                Text = "模式：無限循環，間隔 500ms (±50ms)",
+                Font = new Font("Microsoft JhengHei UI", 9F),
+                ForeColor = Color.DimGray
+            };
+            grpMacro.Controls.Add(lblMacroLoopSummary);
 
             // 嘗試載入執行檔圖示（由 /win32icon 嵌入）
             Icon appIcon = null;
@@ -2400,6 +3699,7 @@ namespace AfkKeeper
             };
             var menu = new ContextMenuStrip();
             menu.Items.Add("顯示視窗", null, (s, e) => RestoreFromTray());
+            menu.Items.Add("⏺ 鍵鼠循環巨集 (F8/F9)...", null, (s, e) => OpenMacroManager());
             menu.Items.Add("📊 查看暫停統計報表", null, (s, e) => tracker.OpenReport(GetSelectedTargetName()));
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("結束", null, (s, e) => { tray.Visible = false; Application.Exit(); });
@@ -2416,6 +3716,11 @@ namespace AfkKeeper
             };
             FormClosing += (s, e) =>
             {
+                UnregisterGlobalHotkeys();
+                if (macroRecorder != null && macroRecorder.IsRecording) macroRecorder.StopRecording();
+                if (macroPlayer != null && macroPlayer.IsPlaying) macroPlayer.Stop();
+                SaveMacro();
+
                 tracker.FlushActive();
                 SaveConfig();
                 HideOverlay();
@@ -3081,6 +4386,235 @@ namespace AfkKeeper
                         }
                     }
                 }
+            }
+            catch { }
+        }
+
+        // ====== 巨集與全域熱鍵控制 ======
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            RegisterGlobalHotkeys();
+        }
+
+        private void RegisterGlobalHotkeys()
+        {
+            try
+            {
+                Native.RegisterHotKey(this.Handle, 9001, 0, (uint)Keys.F8);  // 錄製
+                Native.RegisterHotKey(this.Handle, 9002, 0, (uint)Keys.F9);  // 播放
+                Native.RegisterHotKey(this.Handle, 9003, 0, (uint)Keys.F10); // 停止
+            }
+            catch { }
+        }
+
+        private void UnregisterGlobalHotkeys()
+        {
+            try
+            {
+                Native.UnregisterHotKey(this.Handle, 9001);
+                Native.UnregisterHotKey(this.Handle, 9002);
+                Native.UnregisterHotKey(this.Handle, 9003);
+            }
+            catch { }
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == Native.WM_HOTKEY)
+            {
+                int id = m.WParam.ToInt32();
+                if (id == 9001)
+                {
+                    ToggleMacroRecord();
+                }
+                else if (id == 9002)
+                {
+                    ToggleMacroPlay();
+                }
+                else if (id == 9003)
+                {
+                    StopMacro();
+                }
+            }
+            base.WndProc(ref m);
+        }
+
+        public void ToggleMacroRecord()
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(ToggleMacroRecord));
+                return;
+            }
+
+            if (macroPlayer != null && macroPlayer.IsPlaying)
+            {
+                macroPlayer.Stop();
+            }
+
+            if (macroRecorder.IsRecording)
+            {
+                macroRecorder.StopRecording();
+                SaveMacro();
+                try { System.Media.SystemSounds.Exclamation.Play(); } catch { }
+                tray.ShowBalloonTip(1200, "AfkKeeper 巨集錄製", string.Format("錄製完成！共錄下 {0} 個動作，已自動儲存。", macroConfig.Events.Count), ToolTipIcon.Info);
+                Log(string.Format("【巨集錄製】⏹ 停止錄製，共 {0} 個動作，已自動儲存至腳本。", macroConfig.Events.Count));
+            }
+            else
+            {
+                macroRecorder.StartRecording(macroConfig);
+                try { System.Media.SystemSounds.Asterisk.Play(); } catch { }
+                tray.ShowBalloonTip(1200, "AfkKeeper 巨集錄製", "🔴 已開始錄製鍵鼠動作！\n再按一次 F8 停止錄製。", ToolTipIcon.Info);
+                Log("【巨集錄製】🔴 開始錄製鍵盤滑鼠動作...（再次按 F8 結束）");
+            }
+            UpdateMacroUiStatus();
+            if (macroForm != null && !macroForm.IsDisposed) macroForm.RefreshView();
+        }
+
+        public void ToggleMacroPlay()
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(ToggleMacroPlay));
+                return;
+            }
+
+            if (macroRecorder != null && macroRecorder.IsRecording)
+            {
+                macroRecorder.StopRecording();
+                SaveMacro();
+            }
+
+            if (macroPlayer.IsPlaying)
+            {
+                macroPlayer.Stop();
+                try { System.Media.SystemSounds.Exclamation.Play(); } catch { }
+                tray.ShowBalloonTip(1000, "AfkKeeper 循環巨集", "已手動停止循環播放。", ToolTipIcon.Info);
+                Log("【循環巨集】⏹ 已手動停止循環播放。");
+            }
+            else
+            {
+                if (macroConfig.Events == null || macroConfig.Events.Count == 0)
+                {
+                    MessageBox.Show("目前尚未錄製任何動作！\n請先按下 F8 或點擊「⏺ 錄製」錄製一段動作序列。", "提醒", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                macroPlayer.Start(macroConfig);
+                try { System.Media.SystemSounds.Beep.Play(); } catch { }
+                string loopMode = macroConfig.LoopCount == 0 ? "無限循環" : string.Format("循環 {0} 次", macroConfig.LoopCount);
+                tray.ShowBalloonTip(1200, "AfkKeeper 循環巨集", string.Format("▶ 開始循環播放巨集（{0}）！\n隨時按 F9 或 ESC 停止播放。", loopMode), ToolTipIcon.Info);
+                Log(string.Format("【循環巨集】▶ 開始播放（{0}，動作數：{1}，按 F9 或 ESC 隨時停止）", loopMode, macroConfig.Events.Count));
+            }
+            UpdateMacroUiStatus();
+            if (macroForm != null && !macroForm.IsDisposed) macroForm.RefreshView();
+        }
+
+        public void StopMacro()
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(StopMacro));
+                return;
+            }
+
+            bool wasBusy = false;
+            if (macroRecorder != null && macroRecorder.IsRecording)
+            {
+                macroRecorder.StopRecording();
+                SaveMacro();
+                wasBusy = true;
+            }
+            if (macroPlayer != null && macroPlayer.IsPlaying)
+            {
+                macroPlayer.Stop();
+                wasBusy = true;
+            }
+
+            if (wasBusy)
+            {
+                try { System.Media.SystemSounds.Exclamation.Play(); } catch { }
+                Log("【巨集】⏹ 已強制停止。");
+                UpdateMacroUiStatus();
+                if (macroForm != null && !macroForm.IsDisposed) macroForm.RefreshView();
+            }
+        }
+
+        public void OpenMacroManager()
+        {
+            if (macroForm == null || macroForm.IsDisposed)
+            {
+                macroForm = new MacroManagerForm(macroConfig, macroRecorder, macroPlayer,
+                    () => ResolveTarget(cboWindows != null ? cboWindows.SelectedItem as WindowItem : null),
+                    () => { SaveMacro(); UpdateMacroUiStatus(); });
+            }
+            macroForm.Show();
+            macroForm.BringToFront();
+            macroForm.Activate();
+        }
+
+        private void UpdateMacroUiStatus()
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(UpdateMacroUiStatus));
+                return;
+            }
+
+            if (macroRecorder != null && macroRecorder.IsRecording)
+            {
+                btnMacroRecord.Text = "⏹ 停止 (F8)";
+                btnMacroRecord.BackColor = Color.FromArgb(180, 20, 30);
+                btnMacroPlay.Enabled = false;
+                lblMacroStatus.Text = string.Format("巨集狀態：🔴 錄製中...（已記錄 {0} 個動作）", macroConfig.Events.Count);
+                lblMacroStatus.ForeColor = Color.Red;
+            }
+            else if (macroPlayer != null && macroPlayer.IsPlaying)
+            {
+                btnMacroRecord.Enabled = false;
+                btnMacroPlay.Text = "⏹ 停止 (F9)";
+                btnMacroPlay.BackColor = Color.FromArgb(220, 100, 0);
+                string loopStr = macroConfig.LoopCount == 0 ?
+                    string.Format("第 {0} 輪（無限循環）", macroPlayer.CurrentLoop) :
+                    string.Format("第 {0} / {1} 輪", macroPlayer.CurrentLoop, macroConfig.LoopCount);
+                lblMacroStatus.Text = string.Format("巨集狀態：▶ 循環播放中... {0}", loopStr);
+                lblMacroStatus.ForeColor = Color.DarkGreen;
+            }
+            else
+            {
+                btnMacroRecord.Enabled = true;
+                btnMacroRecord.Text = "⏺ 錄製 (F8)";
+                btnMacroRecord.BackColor = Color.FromArgb(220, 53, 69);
+
+                btnMacroPlay.Enabled = (macroConfig.Events != null && macroConfig.Events.Count > 0);
+                btnMacroPlay.Text = "▶ 循環播放 (F9)";
+                btnMacroPlay.BackColor = Color.FromArgb(25, 135, 84);
+
+                int count = macroConfig.Events != null ? macroConfig.Events.Count : 0;
+                lblMacroStatus.Text = string.Format("巨集狀態：閒置中（已載入 {0} 個動作）", count);
+                lblMacroStatus.ForeColor = Color.DarkSlateBlue;
+            }
+
+            string loopModeText = macroConfig.LoopCount == 0 ? "無限循環" : string.Format("循環 {0} 次", macroConfig.LoopCount);
+            lblMacroLoopSummary.Text = string.Format("模式：{0}，間隔 {1}ms (±{2}ms)，速度 {3:0.0}x",
+                loopModeText, macroConfig.LoopDelayMs, macroConfig.LoopDelayJitterMs, macroConfig.PlaybackSpeed);
+        }
+
+        private void SaveMacro()
+        {
+            try
+            {
+                MacroStorage.Save(macroPath, macroConfig);
+            }
+            catch { }
+        }
+
+        private void LoadMacro()
+        {
+            try
+            {
+                MacroStorage.Load(macroPath, macroConfig);
             }
             catch { }
         }
